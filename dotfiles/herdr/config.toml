@@ -15,6 +15,7 @@ show_agent_labels_on_pane_borders = true
 [keys]
 prefix = "ctrl+b"
 
+# Custom commands run in prefix mode only: press ctrl+b, then t. Bare t is passed through to the pane.
 [[keys.command]]
 key = "t"
 type = "shell"
