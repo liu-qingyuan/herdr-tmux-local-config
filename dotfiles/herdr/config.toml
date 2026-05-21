@@ -1,0 +1,21 @@
+onboarding = false
+
+[ui.toast]
+delivery = "system"
+
+[theme]
+name = "rose-pine"
+
+[ui]
+# Limit the agent sidebar to the current tab/workspace context to reduce
+# cross-pane confusion when several Herdr tabs are open on one workstation.
+agent_panel_scope = "current"
+show_agent_labels_on_pane_borders = true
+
+[keys]
+prefix = "ctrl+b"
+
+[[keys.command]]
+key = "t"
+type = "shell"
+command = "~/.config/herdr/scripts/focus-next-tab.py"
