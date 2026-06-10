@@ -15,3 +15,25 @@ Herdr itself.
 The key reliability rule is: do not guess the pane from current focus. Only
 explicit `HERDR_*` env, or values recovered from the current tmux session env,
 are trusted.
+
+## OMX semantic status bridge
+
+`herdr-agent-state.sh` remains the stock Codex session identity hook. OMX status
+is reported by the companion `herdr-omx-state.sh` plus the background
+`herdr-omx-reconcile-watch` helper.
+
+The reconcile helper follows these rules:
+
+- Read only the boxed session table: `OMX_ROOT/.omx/state/sessions/$OMX_SESSION_ID`.
+- Treat Codex hook turn-state as authoritative when present and fresh.
+- Treat workflow state files as labels only; stale `active:true` files do not make
+  a completed tab appear busy.
+- For legacy sessions without turn-state, use the live tmux title spinner only as
+  a fallback.
+- Support both Herdr public pane ids (`w...-N`) and newer local injected ids
+  (`p_N`) by translating through `~/.config/herdr/session.json` tab order.
+- Preserve Herdr's first `working -> idle` finish/done attention transition, then
+  let the watcher converge stale finish/done back to stable idle after the TTL.
+
+This avoids focus/cwd guessing while still recovering after Herdr restarts or
+newer Herdr versions inject local pane ids into the shell environment.

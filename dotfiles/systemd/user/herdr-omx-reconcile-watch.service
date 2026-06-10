@@ -1,0 +1,13 @@
+[Unit]
+Description=Herdr OMX status reconcile watcher
+After=default.target
+
+[Service]
+Type=simple
+ExecStart=/home/ugreenai/.local/bin/herdr-omx-reconcile-watch
+Restart=always
+RestartSec=3
+Environment=HERDR_OMX_WATCH_INTERVAL=1
+
+[Install]
+WantedBy=default.target

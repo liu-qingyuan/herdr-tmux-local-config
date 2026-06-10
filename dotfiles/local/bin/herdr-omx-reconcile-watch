@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Lightweight Herdr/OMX status convergence watcher.
+# Some already-running OMX/Codex sessions predate the Herdr OMX hook bridge, so
+# they do not emit Stop/UserPromptSubmit hook state. Polling reconcile keeps
+# those legacy panes from staying stuck in working/done after their tmux title
+# and per-session state have settled.
+set -u
+PATH="/home/ugreenai/.local/bin:/home/ugreenai/.npm-global/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+HELPER="${HERDR_OMX_RECONCILE_HELPER:-/home/ugreenai/.local/bin/herdr-omx-reconcile}"
+INTERVAL="${HERDR_OMX_WATCH_INTERVAL:-1}"
+LOCK="${TMPDIR:-/tmp}/herdr-omx-reconcile-watch.${UID:-$(id -u)}.lock"
+exec 9>"$LOCK"
+flock -n 9 || exit 0
+while :; do
+  if command -v tmux >/dev/null 2>&1 && command -v herdr >/dev/null 2>&1 && [ -x "$HELPER" ]; then
+    if tmux list-sessions -F '#{session_name}' 2>/dev/null | grep -q '^omx-'; then
+      HERDR_OMX_RECONCILING=1 "$HELPER" >/dev/null 2>&1 || true
+    fi
+  fi
+  sleep "$INTERVAL"
+done
