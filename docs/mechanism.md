@@ -31,9 +31,9 @@ The reconcile helper follows these rules:
 - For legacy sessions without turn-state, use the live tmux title spinner only as
   a fallback.
 - Support both Herdr public pane ids (`w...-N`) and newer local injected ids
-  (`p_N`) by translating through `~/.config/herdr/session.json` tab order.
+  (`p_N`) by translating through `~/.config/herdr/session.json` tab identity and the current live `herdr pane list` result. This handles restore/reopen cases where `session.json` still names `p_6` but the live tab is exposed as a different public pane id.
 - Preserve Herdr's first `working -> idle` finish/done attention transition, then
   let the watcher converge stale finish/done back to stable idle after the TTL.
 
-This avoids focus/cwd guessing while still recovering after Herdr restarts or
-newer Herdr versions inject local pane ids into the shell environment.
+This avoids broad focus/cwd guessing while still recovering after Herdr restarts,
+restore/reopen churn, or newer Herdr versions injecting local pane ids into the shell environment. The only focus fallback is bounded to one focused live pane in the same cwd when the explicit binding is missing or stale.

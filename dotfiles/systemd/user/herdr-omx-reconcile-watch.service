@@ -4,7 +4,7 @@ After=default.target
 
 [Service]
 Type=simple
-ExecStart=/home/ugreenai/.local/bin/herdr-omx-reconcile-watch
+ExecStart=/bin/sh -lc 'exec "$HOME/.local/bin/herdr-omx-reconcile-watch"'
 Restart=always
 RestartSec=3
 Environment=HERDR_OMX_WATCH_INTERVAL=1

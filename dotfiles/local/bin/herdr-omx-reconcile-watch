@@ -5,12 +5,12 @@
 # those legacy panes from staying stuck in working/done after their tmux title
 # and per-session state have settled.
 set -u
-PATH="/home/ugreenai/.local/bin:/home/ugreenai/.npm-global/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
-HELPER="${HERDR_OMX_RECONCILE_HELPER:-/home/ugreenai/.local/bin/herdr-omx-reconcile}"
+PATH="$HOME/.local/bin:$HOME/.npm-global/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+HELPER="${HERDR_OMX_RECONCILE_HELPER:-$HOME/.local/bin/herdr-omx-reconcile}"
 INTERVAL="${HERDR_OMX_WATCH_INTERVAL:-1}"
-LOCK="${TMPDIR:-/tmp}/herdr-omx-reconcile-watch.${UID:-$(id -u)}.lock"
-exec 9>"$LOCK"
-flock -n 9 || exit 0
+LOCK_DIR="${TMPDIR:-/tmp}/herdr-omx-reconcile-watch.${UID:-$(id -u)}.lockdir"
+mkdir "$LOCK_DIR" 2>/dev/null || exit 0
+trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT HUP INT TERM
 while :; do
   if command -v tmux >/dev/null 2>&1 && command -v herdr >/dev/null 2>&1 && [ -x "$HELPER" ]; then
     if tmux list-sessions -F '#{session_name}' 2>/dev/null | grep -q '^omx-'; then

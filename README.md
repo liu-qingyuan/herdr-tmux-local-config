@@ -10,7 +10,7 @@ binaries; this repo tracks our local dotfile-level integration:
 - Herdr helper script for focusing the next tab.
 - Codex hook script that reports `working`, `idle`, and `blocked` to Herdr.
 - Minimal Codex hook JSON fragment for the Herdr state hook.
-- zsh OMX wrapper that preserves `HERDR_*` through tmux sessions.
+- zsh OMX wrapper that finds `omx` across Linux/macOS install paths and preserves `HERDR_*` through tmux sessions.
 
 ## Layout
 
@@ -42,7 +42,7 @@ and `tmux-cpu`, then links `~/.tmux.conf` and installs the tracked
 Then manually merge:
 
 1. `dotfiles/codex/hooks.herdr.json` into `~/.codex/hooks.json` if those events are missing.
-2. `source /path/to/herdr-local-config/shell/omx-herdr-wrapper.zsh` into `~/.zshrc`, or merge the functions manually.
+2. `source /path/to/herdr-local-config/shell/omx-herdr-wrapper.zsh` into `~/.zshrc`, or merge the functions manually. Set `HERDR_OMX_BIN=/path/to/omx` only if `omx` is not on a standard Linux/macOS path.
 
 Reload Herdr after config changes:
 
@@ -61,7 +61,7 @@ zsh -n ~/.zshrc
 ```
 
 For a live mechanism check, launch Codex/OMX inside Herdr and confirm the pane
-state moves through `working`/`idle` without reporting into the wrong tab.
+state moves through `working`/`idle` without reporting into the wrong tab, including after Herdr restore/reopen where injected `p_N` ids may no longer match live public pane ids.
 
 ## Security notes
 

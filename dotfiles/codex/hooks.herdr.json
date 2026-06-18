@@ -1,32 +1,50 @@
 {
   "hooks": {
-    "PreToolUse": [
-      {
-        "hooks": [
-          {
-            "command": "bash '/Users/lqy/.codex/herdr-agent-state.sh' working",
-            "timeout": 10,
-            "type": "command"
-          }
-        ]
-      }
-    ],
     "SessionStart": [
       {
         "hooks": [
           {
-            "command": "bash '/Users/lqy/.codex/herdr-agent-state.sh' idle",
+            "command": "bash \"$HOME/.codex/herdr-agent-state.sh\" idle",
+            "timeout": 10,
+            "type": "command"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "bash \"$HOME/.codex/herdr-omx-state.sh\"",
             "timeout": 10,
             "type": "command"
           }
         ]
       }
     ],
-    "Stop": [
+    "PreToolUse": [
       {
         "hooks": [
           {
-            "command": "bash '/Users/lqy/.codex/herdr-agent-state.sh' idle",
+            "command": "bash \"$HOME/.codex/herdr-agent-state.sh\" working",
+            "timeout": 10,
+            "type": "command"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "bash \"$HOME/.codex/herdr-omx-state.sh\"",
+            "timeout": 10,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "bash \"$HOME/.codex/herdr-omx-state.sh\"",
             "timeout": 10,
             "type": "command"
           }
@@ -37,7 +55,58 @@
       {
         "hooks": [
           {
-            "command": "bash '/Users/lqy/.codex/herdr-agent-state.sh' working",
+            "command": "bash \"$HOME/.codex/herdr-agent-state.sh\" working",
+            "timeout": 10,
+            "type": "command"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "bash \"$HOME/.codex/herdr-omx-state.sh\"",
+            "timeout": 10,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "command": "bash \"$HOME/.codex/herdr-omx-state.sh\"",
+            "timeout": 10,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "command": "bash \"$HOME/.codex/herdr-omx-state.sh\"",
+            "timeout": 10,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "bash \"$HOME/.codex/herdr-agent-state.sh\" idle",
+            "timeout": 10,
+            "type": "command"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "bash \"$HOME/.codex/herdr-omx-state.sh\"",
             "timeout": 10,
             "type": "command"
           }

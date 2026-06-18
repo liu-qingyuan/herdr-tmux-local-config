@@ -14,8 +14,9 @@ else
   echo "WARN: zsh not found; skipping shell/omx-herdr-wrapper.zsh syntax check." >&2
 fi
 
-if grep -RInE '/home/xiaomi|/Users/amis|/home/ugreenai' dotfiles/tmux scripts/install-tmux.sh; then
-  echo 'Machine-specific path found in tmux config.' >&2
+if grep -RInE '/home/(xiaomi|ugreenai|lqy)|/Users/(amis|lqy|xiaomi)' dotfiles shell scripts README.md docs \
+  --exclude='verify.sh'; then
+  echo 'Machine-specific path found in portable config.' >&2
   exit 1
 fi
 

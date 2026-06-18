@@ -3,15 +3,32 @@
 # It preserves HERDR_* pane identity when launching OMX in a fresh tmux session,
 # so Codex hooks can report state to the correct Herdr pane without guessing.
 
+_herdr_omx_find_bin() {
+  local candidate
+  for candidate in \
+    "${HERDR_OMX_BIN:-}" \
+    "$HOME/.local/bin/omx" \
+    "$HOME/.npm-global/bin/omx" \
+    "/opt/homebrew/bin/omx" \
+    "/usr/local/bin/omx"; do
+    [ -n "$candidate" ] && [ -x "$candidate" ] && { printf '%s\n' "$candidate"; return 0; }
+  done
+  command -v omx 2>/dev/null
+}
+
 _omx_launch() {
+  local omx_bin
+  omx_bin="$(_herdr_omx_find_bin)" || return 127
+  [ -n "$omx_bin" ] || { echo 'omx not found' >&2; return 127; }
+
   if [ -n "${TMUX:-}" ] || ! command -v tmux >/dev/null 2>&1 || [ ! -t 0 ] || [ ! -t 1 ]; then
-    command /opt/homebrew/bin/omx "$@"
+    command "$omx_bin" "$@"
     return
   fi
 
   local session_name="omx-shell-${RANDOM}-$$"
   local quoted_args=""
-  local arg
+  local arg quoted_bin
   local tmux_env_args=()
 
   if [ "${HERDR_ENV:-}" = "1" ]; then
@@ -23,8 +40,9 @@ _omx_launch() {
   for arg in "$@"; do
     quoted_args+=" ${(q)arg}"
   done
+  quoted_bin="${(q)omx_bin}"
 
-  tmux new-session "${tmux_env_args[@]}" -s "$session_name" -c "$PWD" "exec /opt/homebrew/bin/omx${quoted_args}"
+  tmux new-session "${tmux_env_args[@]}" -s "$session_name" -c "$PWD" "exec ${quoted_bin}${quoted_args}"
 }
 
 omx() {

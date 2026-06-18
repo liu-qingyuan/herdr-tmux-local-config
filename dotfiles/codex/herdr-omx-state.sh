@@ -249,6 +249,66 @@ else:
 _pre_pane_id = str(_pre_candidates[0].get("pane_id") or "") if len(_pre_candidates) == 1 else ""
 
 
+def live_public_resolver():
+    panes = _pre_panes if isinstance(_pre_panes, list) and _pre_panes else []
+    if not panes:
+        data = run_json(["herdr", "pane", "list"]) or run_json(["herdr", "pane", "list", "--json"]) or {}
+        if isinstance(data, dict) and isinstance(data.get("result"), dict):
+            panes = data.get("result", {}).get("panes") or []
+    live_by_id = {str(p.get("pane_id") or ""): p for p in panes if isinstance(p, dict) and p.get("pane_id")}
+    live_by_tab = {}
+    for pane in panes:
+        if not isinstance(pane, dict):
+            continue
+        tab_id = str(pane.get("tab_id") or "")
+        if tab_id:
+            live_by_tab.setdefault(tab_id, []).append(pane)
+    session_path = Path.home() / ".config" / "herdr" / "session.json"
+    data = read_json_file(str(session_path))
+
+    def resolve(wid, idx, local_id):
+        direct = f"{wid}-{local_id}"
+        expected_tab = f"{wid}:{idx}"
+        direct_pane = live_by_id.get(direct)
+        if direct_pane and str(direct_pane.get("tab_id") or "") == expected_tab:
+            return direct
+        tab_panes = live_by_tab.get(expected_tab) or []
+        if len(tab_panes) == 1 and tab_panes[0].get("pane_id"):
+            return str(tab_panes[0]["pane_id"])
+        if direct_pane:
+            return direct
+        return ""
+
+    out = {}
+    if isinstance(data, dict):
+        for ws in data.get("workspaces") or []:
+            wid = ws.get("id")
+            if not wid:
+                continue
+            for idx, tab in enumerate(ws.get("tabs") or [], start=1):
+                keys = set(str(k) for k in (tab.get("panes") or {}).keys())
+                root = tab.get("root_pane")
+                focused = tab.get("focused")
+                if root is not None:
+                    keys.add(str(root))
+                if focused is not None:
+                    keys.add(str(focused))
+                tab_public_fallback = ""
+                for candidate in (focused, root):
+                    if candidate is not None:
+                        tab_public_fallback = resolve(wid, idx, str(candidate))
+                        if tab_public_fallback:
+                            break
+                for key in keys:
+                    public = resolve(wid, idx, key)
+                    if public:
+                        out[key] = public
+                        out[f"p_{key}"] = public
+                if tab_public_fallback:
+                    out[f"{wid}:{idx}"] = tab_public_fallback
+    return out
+
+
 def herdr_session_spawn_pid_map():
     session_path = Path.home() / ".config" / "herdr" / "session.json"
     data = read_json_file(str(session_path))
@@ -268,21 +328,21 @@ def herdr_session_spawn_pid_map():
                 latest[m.group(1)] = int(m.group(2))
     except Exception:
         pass
+    local_map = live_public_resolver()
     out = {}
     if isinstance(data, dict):
         for ws in data.get("workspaces") or []:
             wid = ws.get("id")
             if not wid:
                 continue
-            for tab in ws.get("tabs") or []:
+            for idx, tab in enumerate(ws.get("tabs") or [], start=1):
+                tab_public_fallback = local_map.get(f"{wid}:{idx}")
                 for local_id in (tab.get("panes") or {}).keys():
                     local_id = str(local_id)
                     pid = latest.get(local_id)
-                    if pid:
-                        # Herdr public pane ids use the pane-local id from
-                        # session.json, not the tab index. A new tab may start
-                        # with pane 3, so using tab order would report to pane 2.
-                        out[pid] = f"{wid}-{local_id}"
+                    public = local_map.get(local_id) or tab_public_fallback or ""
+                    if pid and public:
+                        out[pid] = public
     return out
 
 
@@ -330,20 +390,23 @@ def infer_pane_from_tmux_client():
         return ""
     return herdr_session_spawn_pid_map().get(pid, "")
 
+_pre_live_pane_ids = {str(p.get("pane_id") or "") for p in _pre_panes if isinstance(p, dict) and p.get("pane_id")}
 _inferred_pane = infer_pane_from_tmux_client()
-if _inferred_pane:
-    # Attached tmux client tty -> current Herdr pane spawn pid is stronger than
-    # inherited tmux HERDR_PANE_ID; stale env values can otherwise overwrite a
-    # different tab.
+if _inferred_pane and _inferred_pane in _pre_live_pane_ids:
+    # Attached tmux client tty -> current live Herdr pane spawn pid is stronger
+    # than inherited tmux HERDR_PANE_ID. Ignore stale session.json/log mappings
+    # that point to panes absent from Herdr's live pane list.
     os.environ["HERDR_PANE_ID"] = _inferred_pane
     try:
         subprocess.run(["tmux", "set-environment", "-t", current_tmux_session_name(), "HERDR_PANE_ID", _inferred_pane], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=0.5)
     except Exception:
         pass
 elif tmux_client_tty(current_tmux_session_name()):
-    # This OMX session is attached, but not through a current Herdr pane. Avoid
-    # reporting into a stale explicit pane binding.
-    os.environ.pop("HERDR_PANE_ID", None)
+    # This OMX session is attached, but not through a current live Herdr pane.
+    # Avoid reporting into a stale explicit pane binding; final resolution below
+    # may still use a single focused same-cwd live pane as a bounded fallback.
+    if (os.environ.get("HERDR_PANE_ID") or "") not in _pre_live_pane_ids:
+        os.environ.pop("HERDR_PANE_ID", None)
 
 if event_l == "pretooluse" and is_omx_question(payload_text):
     state = "blocked"
@@ -388,6 +451,21 @@ if isinstance(pane_list, dict) and isinstance(pane_list.get("result"), dict):
 else:
     panes = []
 
+
+def live_pane_ids(items):
+    return {str(p.get("pane_id") or "") for p in items if isinstance(p, dict) and p.get("pane_id")}
+
+
+def focused_same_cwd_candidates(items):
+    out = []
+    for p in items:
+        if not isinstance(p, dict) or not p.get("focused"):
+            continue
+        pcwd = p.get("foreground_cwd") or p.get("cwd") or ""
+        if pcwd == cwd:
+            out.append(p)
+    return out
+
 # Correct mapping priority for multi-OMX / multi-Codex tabs:
 # 1) explicit Herdr pane recovered from the current tmux *session* env, but only
 #    if it still exists in the current workspace;
@@ -399,17 +477,28 @@ else:
 explicit_pane_id = os.environ.get("HERDR_PANE_ID") or ""
 explicit_matches = [p for p in panes if p.get("pane_id") == explicit_pane_id] if explicit_pane_id else []
 session_matches = [p for p in panes if ((p.get("agent_session") or {}).get("value") == codex_thread_id)] if codex_thread_id else []
+focused_matches = focused_same_cwd_candidates(panes)
 
 if explicit_matches:
     candidates = explicit_matches
 elif session_matches:
     candidates = session_matches
+elif (not explicit_pane_id or explicit_pane_id not in live_pane_ids(panes)) and len(focused_matches) == 1:
+    # Stale/missing HERDR_PANE_ID after Herdr restore/reopen: use the single live
+    # focused pane in the same cwd and repair tmux env for subsequent hooks.
+    candidates = focused_matches
 else:
     candidates = []
 
 if len(candidates) != 1 or not candidates[0].get("pane_id"):
     raise SystemExit(0)
 pane_id = str(candidates[0]["pane_id"])
+if pane_id != explicit_pane_id:
+    os.environ["HERDR_PANE_ID"] = pane_id
+    try:
+        subprocess.run(["tmux", "set-environment", "-t", current_tmux_session_name(), "HERDR_PANE_ID", pane_id], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=0.5)
+    except Exception:
+        pass
 
 seq = str(time.time_ns())
 # Do not release before a Stop/idle hook report. Herdr uses the first
