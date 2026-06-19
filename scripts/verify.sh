@@ -2,11 +2,11 @@
 set -euo pipefail
 
 python3 -m json.tool dotfiles/codex/hooks.herdr.json >/dev/null
-[ ! -e dotfiles/herdr/scripts/focus-next-tab.py ] || python3 -m py_compile dotfiles/herdr/scripts/focus-next-tab.py
+[ ! -e dotfiles/herdr/scripts/focus-next-tab.py ] || PYTHONPYCACHEPREFIX="${TMPDIR:-/tmp}/herdr-local-config-pycache" python3 -m py_compile dotfiles/herdr/scripts/focus-next-tab.py
 sh -n dotfiles/codex/herdr-agent-state.sh
 sh -n dotfiles/codex/herdr-omx-state.sh
 bash -n scripts/install-tmux.sh
-python3 -m py_compile dotfiles/local/bin/herdr-omx-reconcile
+PYTHONPYCACHEPREFIX="${TMPDIR:-/tmp}/herdr-local-config-pycache" python3 -m py_compile dotfiles/codex/herdr_pane_binding.py dotfiles/local/bin/herdr-omx-reconcile
 bash -n dotfiles/local/bin/herdr-omx-reconcile-watch
 if command -v zsh >/dev/null 2>&1; then
   zsh -n shell/omx-herdr-wrapper.zsh

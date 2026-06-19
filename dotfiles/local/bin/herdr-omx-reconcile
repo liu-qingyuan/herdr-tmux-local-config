@@ -13,6 +13,12 @@ Rules:
 import json, os, re, subprocess, time, sys, socket, random
 from pathlib import Path
 
+for _path in (os.environ.get("HERDR_HOOK_LIB_DIR"), str(Path.home() / ".codex")):
+    if _path and _path not in sys.path:
+        sys.path.insert(0, _path)
+
+from herdr_pane_binding import HerdrPaneBinding, base36
+
 EXCLUDE = {"hud-state.json", "prompt-routing-state.json", "notify-hook-state.json", "herdr-omx-turn-state.json"}
 STALE_TURN_SECONDS = 6 * 60 * 60
 FINISH_TTL_SECONDS = 30
@@ -132,67 +138,9 @@ def live_panes():
     return []
 
 def build_live_public_resolver():
-    """Return a resolver for Herdr local pane ids to live public pane ids.
-
-    Herdr injects HERDR_PANE_ID as a terminal-local id (`p_6`). After restore or
-    tab recreation, the live public pane id exposed by `herdr pane list` can be a
-    different local number in the same tab (for example tab 4 restored from p_6
-    but currently exposed as w...-5). Resolve through session.json tab identity
-    plus the live pane list; never trust a stale direct `w...-N` unless it is
-    present in the expected live tab.
-    """
-    panes = live_panes()
-    live_by_id = {str(p.get('pane_id') or ''): p for p in panes if p.get('pane_id')}
-    live_by_tab = {}
-    for pane in panes:
-        tab_id = str(pane.get('tab_id') or '')
-        if tab_id:
-            live_by_tab.setdefault(tab_id, []).append(pane)
-    session_json=Path.home()/'.config'/'herdr'/'session.json'
-    data=read_json(session_json)
-
-    def resolve(wid, idx, local_id):
-        direct = f'{wid}-{local_id}'
-        expected_tab = f'{wid}:{idx}'
-        direct_pane = live_by_id.get(direct)
-        if direct_pane and str(direct_pane.get('tab_id') or '') == expected_tab:
-            return direct
-        tab_panes = live_by_tab.get(expected_tab) or []
-        if len(tab_panes) == 1 and tab_panes[0].get('pane_id'):
-            return str(tab_panes[0]['pane_id'])
-        # Split tabs can legitimately have multiple live panes. In that case
-        # direct mapping is safe only when it exists in the live list; otherwise
-        # there is no deterministic replacement for a missing local pane.
-        if direct_pane:
-            return direct
-        return ''
-
-    out={}
-    if isinstance(data, dict):
-        for ws in data.get('workspaces') or []:
-            wid=ws.get('id')
-            if not wid:
-                continue
-            for idx,tab in enumerate(ws.get('tabs') or [], start=1):
-                keys=set(str(k) for k in (tab.get('panes') or {}).keys())
-                root=tab.get('root_pane')
-                focused=tab.get('focused')
-                if root is not None: keys.add(str(root))
-                if focused is not None: keys.add(str(focused))
-                tab_public_fallback=''
-                for candidate in (focused, root):
-                    if candidate is not None:
-                        tab_public_fallback = resolve(wid, idx, str(candidate))
-                        if tab_public_fallback:
-                            break
-                for key in keys:
-                    public = resolve(wid, idx, key)
-                    if public:
-                        out[key]=public
-                        out[f'p_{key}']=public
-                if tab_public_fallback:
-                    out[f'{wid}:{idx}']=tab_public_fallback
-    return out, panes
+    """Return Herdr local/public pane aliases plus the current live pane list."""
+    binding = HerdrPaneBinding(live_panes())
+    return binding.local_map, binding.panes
 
 def pane_spawn_pid_map():
     session_json=Path.home()/'.config'/'herdr'/'session.json'
@@ -221,8 +169,10 @@ def pane_spawn_pid_map():
             wid=ws.get('id')
             if not wid:
                 continue
+            public_tabs=ws.get('public_tab_numbers') or []
             for idx,tab in enumerate(ws.get('tabs') or [], start=1):
-                tab_public_fallback = local_map.get(f'{wid}:{idx}')
+                tab_public=public_tabs[idx - 1] if idx - 1 < len(public_tabs) else idx
+                tab_public_fallback = local_map.get(f'{wid}:t{base36(tab_public)}') or local_map.get(f'{wid}:t{idx}') or local_map.get(f'{wid}:{idx}')
                 for local_id in (tab.get('panes') or {}).keys():
                     local_id = str(local_id)
                     pid=mapping.get(local_id)
@@ -230,6 +180,7 @@ def pane_spawn_pid_map():
                     if pid and public:
                         out[pid]=public
                 if tab_public_fallback:
+                    out[f'{wid}:t{idx}']=tab_public_fallback
                     out[f'{wid}:{idx}']=tab_public_fallback
     return out
 
@@ -290,6 +241,8 @@ def pids_on_tty(tty):
     return out
 
 def proc_env(pid):
+    # Linux-only fallback. On macOS this returns {}, so launch/hook paths must
+    # persist OMX_SESSION_ID/OMX_ROOT into tmux env for watcher reconciliation.
     try:
         raw=Path(f'/proc/{pid}/environ').read_bytes().decode(errors='ignore').split('\0')
     except Exception:
@@ -346,9 +299,7 @@ def session_has_live_spinner(session):
 
 def herdr_socket_path():
     data = read_json_from_cmd(['herdr','status','server','--json'])
-    if isinstance(data, dict) and data.get('socket'):
-        return data.get('socket')
-    return str(Path.home()/'.config'/'herdr'/'herdr.sock')
+    return str((data.get('socket') if isinstance(data, dict) else None) or (Path.home()/'.config'/'herdr'/'herdr.sock'))
 
 def read_json_from_cmd(argv):
     proc=run(argv, timeout=0.8)

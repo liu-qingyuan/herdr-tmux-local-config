@@ -9,13 +9,73 @@ PATH="$HOME/.local/bin:$HOME/.npm-global/bin:/opt/homebrew/bin:/usr/local/bin:/u
 HELPER="${HERDR_OMX_RECONCILE_HELPER:-$HOME/.local/bin/herdr-omx-reconcile}"
 INTERVAL="${HERDR_OMX_WATCH_INTERVAL:-1}"
 LOCK_DIR="${TMPDIR:-/tmp}/herdr-omx-reconcile-watch.${UID:-$(id -u)}.lockdir"
-mkdir "$LOCK_DIR" 2>/dev/null || exit 0
-trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT HUP INT TERM
-while :; do
+ONCE=0
+case "${1:-}" in
+  --once) ONCE=1 ;;
+  "") ;;
+  -h|--help)
+    printf 'usage: %s [--once]\n' "${0##*/}"
+    exit 0
+    ;;
+  *)
+    printf 'usage: %s [--once]\n' "${0##*/}" >&2
+    exit 2
+    ;;
+esac
+
+run_once() {
   if command -v tmux >/dev/null 2>&1 && command -v herdr >/dev/null 2>&1 && [ -x "$HELPER" ]; then
     if tmux list-sessions -F '#{session_name}' 2>/dev/null | grep -q '^omx-'; then
       HERDR_OMX_RECONCILING=1 "$HELPER" >/dev/null 2>&1 || true
     fi
   fi
+}
+
+lock_is_stale() {
+  local pid_file="$LOCK_DIR/pid" pid started now
+  [ -d "$LOCK_DIR" ] || return 1
+  if [ ! -s "$pid_file" ]; then
+    return 0
+  fi
+  pid="$(cat "$pid_file" 2>/dev/null || true)"
+  case "$pid" in (*[!0-9]*|"") return 0 ;; esac
+  if ! kill -0 "$pid" 2>/dev/null; then
+    return 0
+  fi
+  # If the lock heartbeat is very old, prefer recovery over a permanently stuck
+  # status bridge. Active watchers refresh this file every loop.
+  now="$(date +%s)"
+  started="$(stat -f %m "$pid_file" 2>/dev/null || stat -c %Y "$pid_file" 2>/dev/null || printf '%s' "$now")"
+  [ $((now - started)) -gt 300 ]
+}
+
+acquire_lock() {
+  if mkdir "$LOCK_DIR" 2>/dev/null; then
+    printf '%s\n' "$$" >"$LOCK_DIR/pid"
+    return 0
+  fi
+  if lock_is_stale; then
+    rm -rf "$LOCK_DIR" 2>/dev/null || true
+    if mkdir "$LOCK_DIR" 2>/dev/null; then
+      printf '%s\n' "$$" >"$LOCK_DIR/pid"
+      return 0
+    fi
+  fi
+  exit 0
+}
+
+heartbeat() {
+  printf '%s\n' "$$" >"$LOCK_DIR/pid" 2>/dev/null || true
+}
+
+acquire_lock
+trap 'rm -rf "$LOCK_DIR" 2>/dev/null || true' EXIT HUP INT TERM
+if [ "$ONCE" = "1" ]; then
+  run_once
+  exit 0
+fi
+while :; do
+  heartbeat
+  run_once
   sleep "$INTERVAL"
 done

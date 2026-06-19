@@ -14,11 +14,50 @@ backup_path() {
   fi
 }
 
+move_aside() {
+  local p="$1"
+  [ -e "$p" ] || [ -L "$p" ] || return 0
+  mkdir -p "$backup_dir$(dirname "$p")"
+  mv "$p" "$backup_dir$p"
+}
+
 need() {
   command -v "$1" >/dev/null 2>&1 || {
     echo "error: missing required command: $1" >&2
     exit 1
   }
+}
+
+origin_matches() {
+  local dir="$1" expected="$2" origin
+  origin="$(git -C "$dir" remote get-url origin 2>/dev/null || true)"
+  [ "$origin" = "$expected" ] || [ "$origin" = "${expected%.git}.git" ] || [ "$origin" = "${expected%.git}" ]
+}
+
+sync_repo() {
+  local dir="$1" url="$2" branch="$3"
+  if [ ! -d "$dir/.git" ]; then
+    move_aside "$dir"
+    git clone --depth 1 --branch "$branch" "$url" "$dir"
+    return
+  fi
+  if ! origin_matches "$dir" "$url"; then
+    echo "Keeping existing git checkout with unexpected origin, moved aside: $dir" >&2
+    move_aside "$dir"
+    git clone --depth 1 --branch "$branch" "$url" "$dir"
+    return
+  fi
+  if [ -n "$(git -C "$dir" status --porcelain 2>/dev/null || true)" ] && [ "${HERDR_TMUX_FORCE:-0}" != "1" ]; then
+    echo "error: $dir has local changes; set HERDR_TMUX_FORCE=1 to discard after backup." >&2
+    exit 1
+  fi
+  git -C "$dir" fetch --depth 1 origin "$branch"
+  git -C "$dir" checkout -q "$branch"
+  if [ "${HERDR_TMUX_FORCE:-0}" = "1" ]; then
+    git -C "$dir" reset -q --hard "origin/$branch"
+  else
+    git -C "$dir" pull --ff-only origin "$branch"
+  fi
 }
 
 need git
@@ -32,32 +71,9 @@ backup_path "$HOME/.config/tmux/plugins/tmux-plugins/tmux-cpu"
 
 mkdir -p "$HOME/.config/tmux/plugins/catppuccin" "$HOME/.config/tmux/plugins/tmux-plugins"
 
-if [ ! -d "$HOME/.tmux/.git" ]; then
-  rm -rf "$HOME/.tmux"
-  git clone --depth 1 https://github.com/gpakosz/.tmux.git "$HOME/.tmux"
-else
-  git -C "$HOME/.tmux" fetch --depth 1 origin master || true
-  git -C "$HOME/.tmux" checkout -q master || true
-  git -C "$HOME/.tmux" reset -q --hard origin/master || true
-fi
-
-if [ ! -d "$HOME/.config/tmux/plugins/catppuccin/tmux/.git" ]; then
-  rm -rf "$HOME/.config/tmux/plugins/catppuccin/tmux"
-  git clone --depth 1 https://github.com/catppuccin/tmux.git "$HOME/.config/tmux/plugins/catppuccin/tmux"
-else
-  git -C "$HOME/.config/tmux/plugins/catppuccin/tmux" fetch --depth 1 origin main || true
-  git -C "$HOME/.config/tmux/plugins/catppuccin/tmux" checkout -q main || true
-  git -C "$HOME/.config/tmux/plugins/catppuccin/tmux" reset -q --hard origin/main || true
-fi
-
-if [ ! -d "$HOME/.config/tmux/plugins/tmux-plugins/tmux-cpu/.git" ]; then
-  rm -rf "$HOME/.config/tmux/plugins/tmux-plugins/tmux-cpu"
-  git clone --depth 1 https://github.com/tmux-plugins/tmux-cpu.git "$HOME/.config/tmux/plugins/tmux-plugins/tmux-cpu"
-else
-  git -C "$HOME/.config/tmux/plugins/tmux-plugins/tmux-cpu" fetch --depth 1 origin master || true
-  git -C "$HOME/.config/tmux/plugins/tmux-plugins/tmux-cpu" checkout -q master || true
-  git -C "$HOME/.config/tmux/plugins/tmux-plugins/tmux-cpu" reset -q --hard origin/master || true
-fi
+sync_repo "$HOME/.tmux" "https://github.com/gpakosz/.tmux.git" master
+sync_repo "$HOME/.config/tmux/plugins/catppuccin/tmux" "https://github.com/catppuccin/tmux.git" main
+sync_repo "$HOME/.config/tmux/plugins/tmux-plugins/tmux-cpu" "https://github.com/tmux-plugins/tmux-cpu.git" master
 
 cp "$repo_root/dotfiles/tmux/.tmux.conf.local" "$HOME/.tmux.conf.local"
 rm -f "$HOME/.tmux.conf"
@@ -66,4 +82,5 @@ chmod 644 "$HOME/.tmux.conf.local"
 
 echo "Installed tmux local config."
 echo "Backup: $backup_dir"
+echo "Use HERDR_TMUX_FORCE=1 only when you intentionally want to discard local plugin checkout changes after backup."
 echo "Try: tmux -f \"$HOME/.tmux.conf\" new-session"

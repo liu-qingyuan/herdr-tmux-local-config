@@ -12,9 +12,9 @@ Herdr itself.
 5. OMX question renderer tool calls are mapped to `blocked`, so the sidebar shows human input wait correctly.
 6. The zsh `omx()` wrapper propagates `HERDR_*` into newly-created tmux sessions.
 
-The key reliability rule is: do not guess the pane from current focus. Only
-explicit `HERDR_*` env, or values recovered from the current tmux session env,
-are trusted.
+The key reliability rule is: do not guess the pane from current focus or cwd.
+Only deterministic bindings are trusted: explicit `HERDR_*` env, exact existing
+`agent_session` matches, or current tmux client tty -> Herdr spawn/session mapping.
 
 ## OMX semantic status bridge
 
@@ -30,10 +30,13 @@ The reconcile helper follows these rules:
   a completed tab appear busy.
 - For legacy sessions without turn-state, use the live tmux title spinner only as
   a fallback.
-- Support both Herdr public pane ids (`w...-N`) and newer local injected ids
-  (`p_N`) by translating through `~/.config/herdr/session.json` tab identity and the current live `herdr pane list` result. This handles restore/reopen cases where `session.json` still names `p_6` but the live tab is exposed as a different public pane id.
+- Support both Herdr public pane ids (`w...:pA`) and local injected ids
+  (`p_N`) through the shared `herdr_pane_binding.py` resolver. The resolver translates through `~/.config/herdr/session.json`, `public_pane_numbers`, `public_tab_numbers`, and the current live `herdr pane list` result. This handles restore/reopen cases where `session.json` stores numeric local ids but the live tab is exposed as a public/base36 pane id.
 - Preserve Herdr's first `working -> idle` finish/done attention transition, then
   let the watcher converge stale finish/done back to stable idle after the TTL.
 
-This avoids broad focus/cwd guessing while still recovering after Herdr restarts,
-restore/reopen churn, or newer Herdr versions injecting local pane ids into the shell environment. The only focus fallback is bounded to one focused live pane in the same cwd when the explicit binding is missing or stale.
+This avoids focus/cwd guessing entirely while still recovering after Herdr restarts,
+restore/reopen churn, or newer Herdr versions injecting local pane ids into the
+shell environment. Without an explicit pane binding, exact session match, or
+deterministic tmux tty -> Herdr spawn/session mapping, the bridge no-ops rather
+than risk updating the wrong tab.
